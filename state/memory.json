@@ -1,0 +1,87 @@
+[
+  {
+    "id": "3b58e3c3-c191-4c96-a797-0d51d2551f8d",
+    "kind": "tool_outcome",
+    "keywords": [
+      "web",
+      "search",
+      "claude",
+      "shannon",
+      "wikipedia"
+    ],
+    "descriptor": "web_search(query=Claude Shannon Wikipedia) \u2192 art:498e6f0fd4aa2e80",
+    "value": {
+      "tool": "web_search",
+      "arguments": {
+        "query": "Claude Shannon Wikipedia"
+      },
+      "result_preview": "[artifact art:498e6f0fd4aa2e80, 8,378 bytes] preview: {   \"title\": \"Claude E. Shannon | Wikipedia audio article\",   \"url\": \"https://www.youtube.com/watch?v=CPutV3d6IsY\",   \"snippet\": \"in New York, titled Saving Face: Information Tricks for Love and Life,...",
+      "artifact_id": "art:498e6f0fd4aa2e80"
+    },
+    "artifact_id": "art:498e6f0fd4aa2e80",
+    "source": "action/web_search",
+    "run_id": "f367d502",
+    "goal_id": "g1_f367d502",
+    "confidence": 1.0,
+    "created_at": "2026-05-17T12:19:51.215737"
+  },
+  {
+    "id": "4f12046f-c44d-4150-abea-97304b53255c",
+    "kind": "tool_outcome",
+    "keywords": [
+      "tokyo",
+      "friendly",
+      "the",
+      "family",
+      "web",
+      "search",
+      "weekend",
+      "in",
+      "for",
+      "activities"
+    ],
+    "descriptor": "web_search(query=family-friendly activities in Tokyo for the weeken) \u2192 art:6b7c8a17bc6c0ed0",
+    "value": {
+      "tool": "web_search",
+      "arguments": {
+        "query": "family-friendly activities in Tokyo for the weekend"
+      },
+      "result_preview": "[artifact art:6b7c8a17bc6c0ed0, 10,542 bytes] preview: {   \"title\": \"Family Activities | Tokyo Cheapo\",   \"url\": \"https://tokyocheapo.com/entertainment/family/\",   \"snippet\": \"### Niko Niko Park \u2013 Cheap Fun with the Kids\\n\\nTokyo parks get crowded.  On we...",
+      "artifact_id": "art:6b7c8a17bc6c0ed0"
+    },
+    "artifact_id": "art:6b7c8a17bc6c0ed0",
+    "source": "action/web_search",
+    "run_id": "0bd651e6",
+    "goal_id": "g1_0bd651e6",
+    "confidence": 1.0,
+    "created_at": "2026-05-17T12:24:56.949349"
+  },
+  {
+    "id": "9ab836e3-ac86-4735-82dd-27376ad569e3",
+    "kind": "tool_outcome",
+    "keywords": [
+      "tokyo",
+      "weather",
+      "saturday",
+      "this",
+      "forecast",
+      "web",
+      "search"
+    ],
+    "descriptor": "web_search(query=weather forecast Tokyo this Saturday) \u2192 art:8939eb5a0d254bfa",
+    "value": {
+      "tool": "web_search",
+      "arguments": {
+        "query": "weather forecast Tokyo this Saturday"
+      },
+      "result_preview": "[artifact art:8939eb5a0d254bfa, 9,613 bytes] preview: {   \"title\": \"Tokyo weather in May 2026 - Weather25.com\",   \"url\": \"https://www.weather25.com/asia/japan/tokyo?page=month&month=May\",   \"snippet\": \"| 24 Light rain 21\u00b0 /20\u00b0 | 25 Light drizzle 22\u00b0 /19\u00b0...",
+      "artifact_id": "art:8939eb5a0d254bfa"
+    },
+    "artifact_id": "art:8939eb5a0d254bfa",
+    "source": "action/web_search",
+    "run_id": "0bd651e6",
+    "goal_id": "g2_0bd651e6",
+    "confidence": 1.0,
+    "created_at": "2026-05-17T12:25:33.525895"
+  }
+]

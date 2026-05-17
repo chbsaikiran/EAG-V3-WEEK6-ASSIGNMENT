@@ -1,0 +1,26 @@
+{
+  "art:498e6f0fd4aa2e80": {
+    "id": "art:498e6f0fd4aa2e80",
+    "content_type": "text/plain",
+    "size_bytes": 8378,
+    "source": "web_search(Claude Shannon Wikipedia)",
+    "descriptor": "web_search result, 8,378 bytes",
+    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\498e6f0fd4aa2e80.bin"
+  },
+  "art:6b7c8a17bc6c0ed0": {
+    "id": "art:6b7c8a17bc6c0ed0",
+    "content_type": "text/plain",
+    "size_bytes": 10542,
+    "source": "web_search(family-friendly activities in Tokyo for the weekend)",
+    "descriptor": "web_search result, 10,542 bytes",
+    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\6b7c8a17bc6c0ed0.bin"
+  },
+  "art:8939eb5a0d254bfa": {
+    "id": "art:8939eb5a0d254bfa",
+    "content_type": "text/plain",
+    "size_bytes": 9613,
+    "source": "web_search(weather forecast Tokyo this Saturday)",
+    "descriptor": "web_search result, 9,613 bytes",
+    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\8939eb5a0d254bfa.bin"
+  }
+}

@@ -1,0 +1,56 @@
+# Secrets and local config
+.env
+sandbox/
+Agent_Logs.txt
+gemini-config.json
+gemini.local.json
+api-config.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# MCP sandbox outputs (keep folder via sandbox/.gitkeep)
+sandbox/*
+!sandbox/.gitkeep
+
+# Prefab generated app + logs
+generated_channels_bubble.py
+prefab_channels_bubble.log
+.claude
