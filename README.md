@@ -1,523 +1,498 @@
-# LLM Gateway V3
+# Agent6 — Memory · Perception · Decision · Action
 
-A local FastAPI service that routes LLM calls across **7 free worker providers** (Ollama, Gemini, NVIDIA NIM, Groq, Cerebras, OpenRouter, GitHub Models) with automatic failover, capability-aware routing, prompt caching, native tool-use, structured output — **and a separate pool of 4 router LLMs that classify incoming requests and pick which worker tier should handle them**.
-
-> **For agents reading this:** if a host project has `llm_gatewayV3/` and an `.env` with provider keys, prefer calling this gateway over importing `openai`/`google-generativeai`/etc. directly. V3 is wire-compatible with V2 — every existing call keeps working. The new `auto_route` field is opt-in and gives you per-cognitive-layer routing (perception / memory / decision) for free.
-
-V1 sits on port 8099, V2 on 8100, V3 on **8101**. All three can coexist.
+A cognitive agent built on top of **LLM Gateway V3**. The agent decomposes any user query into goals, executes them step by step using real web tools, stores results in a persistent memory file, and produces a final answer — all without keeping any state inside the LLM.
 
 ---
 
-## Is it running?
-
-```bash
-curl -s http://localhost:8101/v1/routers | python3 -m json.tool
-```
-
-If that returns a JSON object showing four router providers (cerebras / groq / nvidia / github), V3 is up. If not, start it:
-
-```bash
-cd /path/to/llm_gatewayV3
-./run.sh                 # creates .venv on first run, then starts on port 8101
-# or:  ./.venv/bin/python main.py
-```
-
-The server reads `../.env` (parent directory) for keys — same `.env` as V1 and V2.
-
----
-
-## V3 in one minute
-
-V3 is V2 with a **router pool** in front. Same seven worker providers, same MCP server, same agentic code paths. The new thing is a separate set of small/fast LLMs whose only job is to classify each incoming request and decide which tier of worker should handle it.
-
-| Tier | Estimated tokens | Worker order |
-|---|---|---|
-| **TINY**  | < 1,000 | github → openrouter → groq → nvidia → cerebras → gemini → ollama |
-| **LARGE** | 1,000 – 8,000 | gemini → groq → nvidia → cerebras → github → openrouter → ollama |
-| **HUGE**  | > 8,000 | **503** — input too large, use Summarizer Agent (V7, future) |
-
-The router's input is **bounded**: it receives `{token_count, 800-char sample}` and emits a single word (TINY / LARGE / HUGE). It never sees the worker's system prompt, tools, schema, or earlier turns. The separation-of-concerns wall is enforced in code, not by convention.
-
-If you don't pass `auto_route`, V3 behaves identically to V2. The router is opt-in and never load-bearing for a worker call to succeed.
-
----
-
-## Python client
-
-```python
-from client import LLM, ask
-llm = LLM()  # defaults to http://localhost:8101
-
-# 1) Plain V2-style call — no routing, no surprises
-text = ask("Hello in 3 words")
-text = llm.chat("Explain transformers in 2 sentences")["text"]
-
-# 2) Auto-routed call (cognitive layer = perception)
-result = llm.chat(
-    "What is the capital of France?",
-    auto_route="perception",
-)
-print(result["text"])
-print(result["router_decision"])
-# {
-#   "role": "perception",
-#   "tier": "TINY",
-#   "estimated_tokens": 15,
-#   "router_provider": "cerebras",
-#   "router_model": "llama3.1-8b",
-#   "router_latency_ms": 84,
-#   "chosen_worker_provider": "github",
-#   "chosen_worker_model": "openai/gpt-4.1-mini",
-#   "fallback_used": false
-# }
-
-# 3) Memory layer routing — summarizing retrieved facts
-result = llm.chat(
-    f"Summarize for relevance to '{query}':\n\n{retrieved_chunk}",
-    auto_route="memory",
-)
-
-# 4) Decision layer routing — planning the next step
-result = llm.chat(
-    plan_state_serialized,
-    auto_route="decision",
-)
-
-# 5) Explicit provider beats auto_route (debugging escape hatch)
-result = llm.chat(
-    "Hello",
-    auto_route="perception",       # logged but ignored
-    provider="g",                  # gemini wins
-)
-assert result["router_decision"] is None
-
-# 6) All V2 features still work — tools, caching, reasoning, structured output
-result = llm.chat(
-    messages=[{"role": "user", "content": "What is 7+5? Use the add tool."}],
-    tools=[{"name":"add","description":"a+b",
-            "input_schema":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"]}}],
-    tool_choice="auto",
-    auto_route="decision",          # routes via cognitive-layer hint
-)
-```
-
-The client lives in [client.py](client.py). Copy it into any project, or just use HTTP.
-
----
-
-## HTTP API
-
-### `POST /v1/chat` — make a call
-
-All V2 fields still work. The one new field:
-
-```jsonc
-{
-  "prompt": "Hello",
-  "messages": [{"role": "user", "content": "Hello"}],
-  "system": "You are helpful.",
-  "provider": "g",                  // explicit wins over auto_route
-  "model": "gemini-3.1-flash-lite",
-  "max_tokens": 2048,
-  "temperature": 0.7,
-  "stream": false,
-  "tools": [...],
-  "tool_choice": "auto",
-  "cache_system": true,
-  "reasoning": "medium",
-  "response_format": {"type":"json_schema","schema":{...}},
-
-  "auto_route": "perception"        // NEW in V3: "perception" | "memory" | "decision"
-}
-```
-
-Response adds a `router_decision` field when routing happened:
-
-```jsonc
-{
-  "provider": "gemini",
-  "model": "gemini-3.1-flash-lite",
-  "text": "...",
-  "tool_calls": [],
-  "stop_reason": "end_turn",
-  "input_tokens": 1240,
-  "output_tokens": 87,
-  "cache_creation_input_tokens": 0,
-  "cache_read_input_tokens": 0,
-  "latency_ms": 1834,
-  "tool_call_dialect": "native",
-  "reasoning_applied": false,
-  "parsed": null,
-  "attempted": [],
-  "router_decision": {
-    "role": "perception",
-    "tier": "LARGE",
-    "estimated_tokens": 1240,
-    "router_provider": "groq",
-    "router_model": "llama-3.3-70b-versatile",
-    "router_latency_ms": 243,
-    "chosen_worker_provider": "gemini",
-    "chosen_worker_model": "gemini-3.1-flash-lite",
-    "fallback_used": false
-  }
-}
-```
-
-`router_decision` is `null` for plain calls (no `auto_route`) or calls with an explicit `provider`.
-
-Errors: `502` if a specific provider failed (with `provider` set), `503` if all providers were unavailable, **`503` with `error: "input exceeds 8000 tokens"`** when the router classifies HUGE.
-
-### `GET /v1/routers` — **NEW in V3**
-
-Returns the router pool: configured providers, failover order, per-router live rate-state, today's stats, the tier-to-worker mapping table.
-
-```bash
-curl -s http://localhost:8101/v1/routers | python3 -m json.tool
-```
-
-### `GET /v1/providers`
-Worker pool — providers, default models, shortcut keys, rate limits.
-
-### `GET /v1/capabilities`
-Worker capability matrix (tools/caching/reasoning/structured/parallel_tools per current model).
-
-### `GET /v1/status`
-Worker pool live state (RPM/RPD/cooldown). Router pool state lives under `/v1/routers`.
-
-### `GET /v1/calls?limit=100&provider=&status=`
-Recent call log. **V3 adds two fields per row:** `call_role` (`worker` | `router_perception` | `router_memory` | `router_decision`) and `router_decision` (the tier label that was emitted, or the literal `"fallback"` / `"error"` / `"unparseable"`).
-
-### `GET /` and `GET /help`
-Dashboard (two grids — worker pool on top, router pool below) and help page.
-
----
-
-## The router pool — what it is and why it exists
-
-The course's Session 6 architecture has four cognitive layers — **Perception → Memory → Decision → Action**. The first three all need an LLM to do their work, and which LLM is right for the job depends on what kind of work it is. A simple "what's the capital of France?" perception step doesn't need Gemini 2.5; a 5,000-token memory digest does. Without routing, you either over-pay on small queries or under-perform on big ones.
-
-V3 puts a tiny LLM in front of those three layers whose only job is to look at incoming work and decide which tier of worker should handle it. Those tiny LLMs are the **router pool**:
-
-| Provider | Router model | Size | Speed | Notes |
-|---|---|---|---|---|
-| **Cerebras** | `llama3.1-8b` | 8B | ~2,200 tok/s | ⚠️ **deprecates May 27, 2026** — must swap before then. Override via `ROUTER_CEREBRAS_MODEL`. |
-| **Groq** | `llama-3.3-70b-versatile` | 70B | ~275 tok/s | strong classifier; separate per-model quota from Groq's worker (`openai/gpt-oss-120b`) |
-| **NVIDIA NIM** | `nvidia/llama-3.1-nemotron-nano-8b-v1` | 8B | NIM rate | small, reasoning-tuned |
-| **GitHub Models** | `microsoft/Phi-4-mini-instruct` | 3.8B | fast | smallest tier, last fallback |
-
-The four sizes (120B-class Groq, 8B Cerebras / NVIDIA, 4B GitHub) are a deliberate spread. When the heavy ones are rate-limited, the small ones stay alive — there's always a router that can serve.
-
-The router pool has its **own rate state** (`RouterPool` in [router.py](router.py)), its **own dashboard section**, its **own quota counters**. Router calls and worker calls are logged with distinct `call_role` markers so you can audit routing activity separately from worker activity. Crucially, on every router provider we use, the underlying API meters per-model, so a router call to `llama-3.3-70b` on Groq does **not** burn the worker's `gpt-oss-120b` RPM. The quotas are physically separate at the upstream.
-
----
-
-## The separation-of-concerns wall
-
-This is the central design idea of V3. State it once and the rest of the architecture follows:
-
-> **The router never sees the worker's prompt, system, tools, schema, or earlier turns. It receives a token estimate and a sample. By construction, it cannot leak agentic context into routing logic.**
-
-Concretely, when the gateway sends a request to a router LLM, the payload is:
-
-```jsonc
-{
-  "token_count": 2430,
-  "sample": "<first 400 chars of user content>\n...\n<last 400 chars of user content>"
-}
-```
-
-And the router's prompt is:
+## Architecture
 
 ```
-You are a routing classifier. Given a token_count and a content sample,
-output exactly one of: TINY, LARGE, or HUGE.
-
-Rules:
-- TINY: token_count below 1000 with simple factual content.
-- LARGE: token_count between 1000 and 8000, OR token_count below 1000
-        but content is dense (code, base64, multilingual, technical).
-- HUGE: token_count above 8000.
-
-Output the single word and nothing else.
+┌─────────────────────────────────────────────────────────────┐
+│                        agent6/                              │
+│                                                             │
+│   User Query                                                │
+│       │                                                     │
+│       ▼                                                     │
+│  ┌─────────┐    read()    ┌──────────────┐                 │
+│  │ Memory  │◄────────────►│ memory.json  │  (persists      │
+│  │ Module  │    write()   │  (facts,     │   across runs)  │
+│  └────┬────┘              │  prefs,      │                 │
+│       │ hits              │  outcomes)   │                 │
+│       ▼                   └──────────────┘                 │
+│  ┌────────────┐                                             │
+│  │ Perception │  Gemini (pinned)  ← goals decomposed once  │
+│  │  Module    │  marks done/open each iteration             │
+│  └─────┬──────┘                                             │
+│        │ current_goal + attach_artifact_id?                 │
+│        ▼                                                     │
+│  ┌────────────┐  auto_route="decision"                      │
+│  │  Decision  │  (Router picks TINY/LARGE tier)             │
+│  │  Module    │  → tool_call  OR  answer                    │
+│  └─────┬──────┘                                             │
+│        │ tool_call                                          │
+│        ▼                                                     │
+│  ┌────────────┐  MCP stdio                                  │
+│  │   Action   │──────────► mcp_server.py (9 tools)          │
+│  │  Module    │◄──────────  result text                      │
+│  └─────┬──────┘                                             │
+│        │ > 4 KB?                                            │
+│        ▼                                                     │
+│  ┌──────────────┐                                           │
+│  │ Artifact     │  state/artifacts/<sha256>.bin             │
+│  │ Store        │  art:<handle> stored in memory.json       │
+│  └──────────────┘                                           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-That's the entire router-world contract. It doesn't know what tools are available, what the agent is doing, what the worker's output schema looks like, or even what role it's classifying for. It just looks at size and structure and emits one word.
+### The Four Roles
 
-This matters because:
-
-1. **The router cannot be confused by agentic state.** Long system prompts, exotic tool definitions, multi-turn histories — none of it reaches the router. It can never make a worse decision because the worker's setup is weird.
-2. **Routing decisions are deterministic given inputs.** The same `{token_count, sample}` produces the same tier — useful for caching, replay, and debugging.
-3. **You can swap the router pool independently.** Want to test a different router model, or replace the LLM router with a Python function? Change [main.py:_classify_tier()](main.py) — the worker code doesn't know or care.
-4. **Students can read the code and verify the wall holds.** `_classify_tier()` physically constructs the bounded envelope; the router providers never receive anything else. The principle is enforced in 30 lines.
-
----
-
-## The tier table — how thresholds were picked
-
-| Tier | Token range | Why this threshold |
-|---|---|---|
-| TINY | < 1,000 | Small fast workers (gpt-4.1-mini, gpt-oss-120b on Groq) handle this competently. No reason to wake up Gemini's long-context machinery. |
-| LARGE | 1,000 – 8,000 | Past 1K tokens, smaller models start dropping coherence. Below 8K, free-tier Gemini handles it well. The lower bound is the load-bearing one — drop it from 1,000 to 200 and you'll over-route to Gemini; raise it to 4,000 and you'll under-serve work that needs a real model. |
-| HUGE | > 8,000 | Free-tier Gemini flash-lite-preview can technically accept up to 1M context but degrades in quality past ~32K, and most other free workers are capped at 8K-100K. Rather than pretend, V3 returns 503 with a clear "use Summarizer Agent" hint. |
-
-The 1K elbow is the one we'd revisit if free-tier model behavior shifts. The 8K ceiling is set by what free-tier Gemini does well, not by what it claims.
-
-### Token estimator
-
-V3 uses `len(text.split()) * 1.4` — words × 1.4. Intentionally rough:
-
-- For English prose, within ~10% of `tiktoken cl100k_base`. Fast (microseconds), no dependency.
-- For code, base64, CJK, or minified JSON, can be off by 30–100%. The router's content sample handles those cases — when the count is unreliable, the sample shows the structure and the router LLM upgrades the tier.
-- Estimator output is informational. The threshold elbows (1,000 / 8,000) have wide tolerance — a 20% miscount near a threshold doesn't flip the routing decision.
-
-If you want exact tokenization, override `_estimate_tokens()` in [main.py](main.py). The interface is `(text: str) -> int`.
-
----
-
-## Worker pool — providers and shortcut keys
-
-Same seven providers as V2; two default models changed:
-
-| Shortcut | Provider | Default model (V3) | Free tier (RPM / RPD) |
+| Role | File | LLM | Purpose |
 |---|---|---|---|
-| `o`, `oll` | Ollama (local) | env-controlled (e.g. `gemma4:31b`) | unlimited |
-| `g`, `gem` | Gemini | `gemini-3.1-flash-lite` | 15 / 1,000 |
-| `n`, `nv` | NVIDIA NIM | `deepseek-ai/deepseek-v3.2` | 40 / — |
-| `gr` | Groq | **`openai/gpt-oss-120b`** *(was `llama-3.3-70b-versatile` in V2)* | 30 / 1,000 |
-| `c`, `cer` | Cerebras | **`zai-glm-4.7`** *(was `qwen-3-235b-a22b-instruct-2507`)* | 30 / — (1M tokens/day, 8K ctx cap) |
-| `or`, `opr` | OpenRouter | `nvidia/nemotron-3-super-120b-a12b:free` | 20 / 50 (per free model) |
-| `gh`, `ghb` | GitHub Models | `openai/gpt-4.1-mini` | 10–15 / 50–150, 8K in / 4K out |
+| **Memory** | `memory.py` | None (pure Python) | Read/write `state/memory.json` — keyword overlap search, record tool outcomes, store facts |
+| **Perception** | `perception.py` | Gemini (pinned) | Decompose query → goals; mark done; attach artifact indices |
+| **Decision** | `decision.py` | auto_route="decision" | Choose next action: call one MCP tool OR give a final answer |
+| **Action** | `action.py` | None | Dispatch MCP tool call; store >4 KB results as artifacts |
 
-**Why the two changes:**
+### Key Design Decisions
 
-- **Cerebras: `qwen-3-235b-a22b-instruct-2507` deprecates May 27, 2026.** Cerebras's currently-active free model on the test account that does long-context work well is `zai-glm-4.7` (355B). It's bigger but Cerebras's wafer-scale hardware runs it at ~1,000 tok/s, fast enough for worker calls.
-- **Groq: `llama-3.3-70b-versatile` migrated to the router pool.** Groq's worker slot is now `openai/gpt-oss-120b`, which has the `reasoning_effort` knob and handles deeper reasoning tasks. The 70B Llama gets reused as a Groq router model where its size/speed balance suits classification work.
-
-Failover order (worker pool) is configurable via `LLM_ORDER` env. Default: `ollama,gemini,nvidia,groq,cerebras,openrouter,github`.
-
----
-
-## How routing actually works, step by step
-
-When `auto_route` is set and `provider` is not:
-
-1. **Estimate token count** of the user prompt: `len(text.split()) * 1.4`.
-2. **Short-circuit HUGE:** if estimate > 8,000, skip the router call entirely and 503 the request with a clear message. Saves a router call on inputs that can't be served anyway.
-3. **Build the envelope:** `{token_count: <int>, sample: <first 400 chars + "..." + last 400 chars>}`. Capped at ~800 chars regardless of input size.
-4. **Pick a router provider** by walking `ROUTER_ORDER` (default `cerebras,groq,nvidia,github`), skipping any that are in cooldown or rate-limited.
-5. **Call the router LLM** with the fixed prompt above, `max_tokens=8`, `temperature=0`. Should return one word.
-6. **Parse the response:** scan for `TINY` / `LARGE` / `HUGE` (case-insensitive). First match wins.
-7. **If router LLM fails or returns unparseable text** (e.g. Cerebras `queue_exceeded`, a 429, or a refusal): log the failure, fall through to the **next router provider**. Repeat steps 4-6.
-8. **If every router fails:** fall back to the **deterministic token-count rule** (`_tier_from_count()`) — same thresholds, no LLM in the loop. Routing is best-effort; it never blocks a worker call.
-9. **Map tier to worker failover order** via the `TIER_TO_ORDER` table in [main.py](main.py).
-10. **Dispatch to the worker pool** using V2's normal `Router.pick()` machinery (capability filtering, rate limits, cooldowns, etc.).
-11. **Log both calls** to SQLite — the router call with `call_role="router_<role>"` and the tier in `router_decision`; the worker call with `call_role="worker"` and the chosen tier in `router_decision` for cross-reference.
-12. **Return the worker response** enriched with the `router_decision` block so the caller can see what the router decided.
-
-If `auto_route` is set AND `provider` is set, the explicit provider wins — the router pool is skipped entirely. This is the debugging escape hatch.
-
-If `auto_route` is not set, V3 behaves like V2 — no router call, no `router_decision` in the response.
+| What | Why |
+|---|---|
+| Perception pinned to Gemini | Smaller models drop goals, hallucinate artifact indices, and break goal identity across iterations |
+| Goals identified by **position**, not by string id | The LLM cannot invent a stale id; the outer loop owns all stable ids |
+| Artifact references use **integer index** into MEMORY HITS | Model picks from indices it actually sees — no free-text hallucination of art: handles |
+| `auto_route="decision"` on Decision | Router picks TINY for short goals, LARGE for artifact-heavy ones; Gemini fallback for HUGE contexts |
+| `art:` guard in `action.py` | Blocks models from passing artifact handles as file paths or URLs to tools |
+| All LLM calls are **stateless** | The agent maintains all state (history, goals, artifacts) — not the LLM |
+| Tool results >4 KB stored as artifacts | Keeps history compact; raw bytes attached to Decision only when Perception decides they are needed |
 
 ---
 
-## Configuration
+## File Structure
 
-Edit `EAGV3/.env` (or `../.env` relative to the gateway dir):
+```
+Assignment/
+├── agent6/
+│   ├── __init__.py          # package entry: run(), main()
+│   ├── __main__.py          # python -m agent6 "query"
+│   ├── schemas.py           # Pydantic models: MemoryItem, Goal, Observation,
+│   │                        #   AgentToolCall, DecisionOutput, Artifact
+│   ├── memory.py            # pure-Python read / filter / record_outcome / remember
+│   ├── artifact_store.py    # SHA256-keyed binary store for >4 KB payloads
+│   ├── perception.py        # Gemini-pinned goal orchestrator
+│   ├── decision.py          # auto_route LLM call → tool or answer
+│   ├── action.py            # pure MCP dispatch, ~35 lines, no LLM
+│   └── agent.py             # main cognitive loop
+│
+├── mcp_server.py            # MCP server — 9 tools (web_search, fetch_url, …)
+├── main.py                  # LLM Gateway V3 (FastAPI, port 8101)
+├── providers.py             # Provider adapters (Gemini, Groq, NVIDIA, …)
+├── router.py                # Failover rings and rate-state
+├── schemas.py               # Gateway Pydantic models
+├── client.py                # Python SDK for the gateway
+├── .env                     # API keys (not committed)
+│
+└── state/                   # created at runtime
+    ├── memory.json           # durable across runs
+    └── artifacts/
+        ├── index.json
+        └── <sha256[:16]>.bin
+```
 
-```bash
-# Worker provider keys — same as V1/V2
-GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-3.1-flash-lite
+---
 
-NVIDIA_API_KEY=...
-NVIDIA_MODEL=deepseek-ai/deepseek-v3.2
+## Agent Loop (one iteration)
 
+```
+memory.read(query, history)      → hits
+perception.observe(query, hits, history, prior_goals)
+    → Observation(goals with done flags + attach_artifact_id)
+[all goals done?] → exit
+load artifact bytes if attach_artifact_id is set
+decision.next_step(goal, hits, attached, history, mcp_tools)
+    → DecisionOutput(answer | tool_call)
+if tool_call:
+    action.execute(session, tool_call)   → (descriptor, artifact_id | None)
+    memory.record_outcome(...)
+    history.append(tool result)
+if answer:
+    history.append(answer)
+repeat
+```
+
+---
+
+## Setup
+
+### 1. Prerequisites
+
+The project uses the `.venv` in the Assignment folder. All dependencies are already installed there.
+
+```bat
+.venv\Scripts\activate
+```
+
+### 2. `.env` file
+
+Create `.env` in the Assignment folder:
+
+```env
+GEMINI_API_KEY=your_key_here
+TAVILY_API_KEY=your_key_here        # for web_search
+
+# Optional
+GEMINI_MODEL=gemini-2.0-flash
 GROQ_API_KEY=...
-GROQ_MODEL=openai/gpt-oss-120b              # V3 default (was llama-3.3-70b-versatile in V2)
-
-CEREBRAS_API_KEY=...
-CEREBRAS_MODEL=zai-glm-4.7                  # V3 default (was qwen-3-235b-a22b-instruct-2507)
-
-OPEN_ROUTER_API_KEY=...
-OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
-
-GITHUB_ACCESS_TOKEN=...
-GITHUB_MODEL=openai/gpt-4.1-mini
-
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=gemma4:31b                     # only loaded if OLLAMA_MODEL is set
-
-# Worker failover order
-LLM_ORDER=ollama,gemini,nvidia,groq,cerebras,openrouter,github
-
-# V3 router pool config
-ROUTER_ORDER=cerebras,groq,nvidia,github
-ROUTER_CEREBRAS_MODEL=llama3.1-8b           # ⚠️ deprecates May 27 2026 — update before then
-ROUTER_GROQ_MODEL=llama-3.3-70b-versatile
-ROUTER_NVIDIA_MODEL=nvidia/llama-3.1-nemotron-nano-8b-v1
-ROUTER_GITHUB_MODEL=microsoft/Phi-4-mini-instruct
-
+NVIDIA_API_KEY=...
 GATEWAY_V3_PORT=8101
 ```
 
-Any router provider whose `*_API_KEY` is missing is silently skipped — V3 still works with whatever subset of router providers is available. If all four router keys are missing, every auto-routed call falls back to the deterministic token-count rule.
+### 3. Start the gateway (Terminal 1)
+
+```bat
+.venv\Scripts\python.exe main.py
+```
+
+Verify it has providers: http://localhost:8101
+
+### 4. Run the agent (Terminal 2)
+
+```bat
+uv run python -m agent6 "Your query here"
+```
+
+> **Note:** `uv run python` resolves to the system Python but the agent auto-detects `.venv\Scripts\python.exe` for the MCP subprocess. If you see import errors, activate the venv first and run `python -m agent6 "..."` directly.
 
 ---
 
-## Common usage patterns by cognitive layer
+## MCP Tools (from `mcp_server.py`)
 
-**Perception** — extracting structured info from a user message:
-```python
-result = llm.chat(
-    user_message,
-    auto_route="perception",
-    response_format={"type":"json_schema","schema":Intent.model_json_schema()},
-)
-intent = Intent.model_validate(result["parsed"])
-```
+| Tool | Description |
+|---|---|
+| `web_search` | Tavily primary, DuckDuckGo fallback. Hard-capped at 5 results |
+| `fetch_url` | Clean markdown via crawl4ai (headless Chromium) |
+| `get_time` | Current time in any IANA timezone |
+| `currency_convert` | Live rates via frankfurter.dev |
+| `read_file` | Read a file from the sandbox |
+| `list_dir` | List a sandbox directory |
+| `create_file` | Create a new file (parent directory must exist) |
+| `update_file` | Overwrite an existing sandbox file |
+| `edit_file` | Find-and-replace inside a sandbox file |
 
-**Memory** — summarizing a retrieved chunk for relevance:
-```python
-result = llm.chat(
-    f"Given the query '{q}', what's relevant in this passage?\n\n{passage}",
-    auto_route="memory",
-)
-# router upgrades to LARGE if the passage is dense or long, TINY if it's short
-```
-
-**Decision** — planning the next step from current state:
-```python
-result = llm.chat(
-    f"Current plan state:\n{plan.model_dump_json()}\n\nWhat's the next action?",
-    auto_route="decision",
-    tools=available_tools,
-    tool_choice="auto",
-)
-```
-
-**Verifier (not yet a router-routed slot in V3)** — pass through V2's structured-output path:
-```python
-verdict = llm.chat(
-    verifier_prompt,
-    response_format={"type":"json_schema","schema":Verdict.model_json_schema()},
-    # no auto_route — verifier router slot will arrive in a later version
-)
-```
-
-**Override the router when you know better:**
-```python
-# I know this is a coding task, force Groq's gpt-oss-120b
-result = llm.chat(code_question, provider="gr")    # auto_route ignored if set
-```
-
-**Watch what's happening in the dashboard:**
-```bash
-open http://localhost:8101
-```
-
-The dashboard shows worker pool and router pool side-by-side, with router activity rendered in purple to make the separation visually obvious. Recent calls table flags each row with a `Role` column (worker / rt:perception / rt:memory / rt:decision) and a `Tier` column showing what the router decided.
+Files are sandboxed under `./sandbox/`. Subdirectories `reminders/`, `notes/`, `research/` are pre-created by the agent on startup.
 
 ---
 
-## Files
+## The Four Test Queries
 
-- [main.py](main.py) — FastAPI app, routes, `_classify_tier()` for routing decisions, `auto_route` wiring in `/v1/chat`, new `/v1/routers` endpoint
-- [providers.py](providers.py) — provider adapters (unchanged from V2) + `build_router_providers()` factory + `ROUTER_DEFAULTS` table
-- [router.py](router.py) — `Router` (worker pool) and `RouterPool` (V3 router pool); both share `RateState` and `LIMITS`
-- [schemas.py](schemas.py) — Pydantic v2 models. New: `ChatRequest.auto_route`, `RouterDecision`, `ChatResponse.router_decision`
-- [db.py](db.py) — `gateway_v3.db` with `call_role` and `router_decision` columns; `aggregate(call_role=...)` filters
-- [cache.py](cache.py) — unchanged from V2 (Gemini SHA-256 explicit cache)
-- [client.py](client.py) — Python SDK with new `auto_route` kwarg
-- [static/dashboard.html](static/dashboard.html) — two pool grids, router-aware test area, role column in calls
-- [run.sh](run.sh) — venv setup + start on port 8101
-- `gateway_v3.db` — created on first run; separate file from `gateway_v2.db`
+### Query A — Artifact Attach Test
 
----
-
-## Gotchas
-
-- **Cerebras router model deprecates May 27, 2026.** `llama3.1-8b` is the only confirmed-working small Cerebras model on the test account. If your Cerebras account has entitlement for `gpt-oss-120b` or `zai-glm-4.7`, override via `ROUTER_CEREBRAS_MODEL=...`. Otherwise plan to either upgrade the account before May 27 or drop Cerebras from `ROUTER_ORDER` and run with three routers.
-- **Cerebras free-tier `queue_exceeded` is routine, not a bug.** Cerebras's upstream returns 429 "We're experiencing high traffic right now" at unpredictable times. The four-router pool is designed for this — when Cerebras 429s, Groq picks up. Dashboard will show occasional Cerebras errors with successful Groq routing decisions immediately after.
-- **`fallback_used: true` is normal.** When every router in the pool is rate-limited or errors out, V3 falls back to the deterministic token-count rule. The worker call still happens — routing degrades gracefully. Watch this on the dashboard; if it's running high, increase `ROUTER_ORDER` redundancy or stop hammering the gateway.
-- **HUGE is a hard 503 by design.** Inputs over 8,000 estimated tokens return 503 with a clear hint to chunk or wait for V7's Summarizer Agent. If you want to try Gemini anyway, set `provider="g"` explicitly — that bypasses the router.
-- **`auto_route` + `provider` → provider wins, no router call happens.** This is the debugging escape hatch, not a bug. `router_decision` will be `null` in the response even though `auto_route` was set.
-- **V2 and V3 use separate DB files.** `gateway_v2.db` and `gateway_v3.db` don't share schema or data. Run them on ports 8100/8101 simultaneously without conflict.
-- **The token estimator (`words × 1.4`) is wrong for code, CJK, and base64.** That's by design — the router's content sample lets the LLM router upgrade the tier when the count number lied. If you need exact tokenization for some other reason, override `_estimate_tokens()` in [main.py](main.py).
-- **GitHub Models hard-caps every request at 8K input / 4K output.** This affects both the worker (Phi-4-mini-instruct for routing has the same cap) and any GitHub worker calls. For LARGE-tier work on GitHub, you may hit the 8K input cap before you hit the 8,000-token routing threshold.
-- **OpenRouter `:free` models share a 50 RPD pool.** OpenRouter is in the worker pool but **not** the router pool for this reason — using it as a router would burn the same daily quota as worker calls.
-- **`cache_system=true` is a paid-tier feature on Gemini.** Free-tier keys silently ignore it — context caching (both implicit and explicit) is only available to paid users. Setting it on a free key does no harm but also gives no savings; the examples above are for paid keys.
-- **Gemini 3 models loop or degrade at low temperature.** Google's own guidance is to keep `temperature` near `1.0` for Gemini 3.x; setting it to `0` can cause runaway token loops (e.g. `"id": "g:1,1,1,1,..."`) on schema-constrained calls. If you need determinism, use a worker on Groq/Cerebras with `temperature=0` instead, or accept Gemini at `temperature≈1.0`.
-- **The four router slots in the pool all share quotas across the same API key when the worker uses the same provider.** Concretely: Groq's router (`llama-3.3-70b-versatile`) and Groq's worker (`openai/gpt-oss-120b`) are two **separate** per-model RPM buckets, so they don't compete. The Cerebras router (`llama3.1-8b`) and Cerebras worker (`zai-glm-4.7`) are also separate per-model. But the **daily token quota** on Cerebras (`tokens_per_day: 1_000_000`) is account-wide, so both router and worker draw from it.
-
----
-
-## Adding a new router provider
-
-The router pool is configurable. To add a fifth router (say, an OVHcloud anonymous endpoint):
-
-1. **Add the provider adapter** in [providers.py](providers.py) if it's not already there (subclass `OpenAICompatProvider` — most providers are OpenAI-compatible).
-2. **Add an entry in `build_router_providers()`** reading the env key and the `ROUTER_<PROVIDER>_MODEL` override.
-3. **Add the provider to `ROUTER_DEFAULTS`** with the model id you want as default.
-4. **Add the provider to `ROUTER_ORDER` env var** in the position where it should sit in the failover ring.
-5. **Add an entry in `LIMITS`** in [router.py](router.py) if the provider isn't already in the worker pool.
-
-No other changes needed — the dashboard, `/v1/routers`, and call logging all pick it up automatically. Mistral AI and OVHcloud were evaluated for V3 and parked for V4 — see Session 6 notes for the rationale.
-
----
-
-## Adding a new worker provider
-
-Same as V1/V2 — add adapter in `providers.py`, entry in `build_providers()`, `LIMITS` entry, shortcut keys in `SHORTCUTS`, add to `LLM_ORDER`. The router pool's `TIER_TO_ORDER` table in [main.py](main.py) determines where new workers slot into each tier's failover order — add them there too if you want them in the auto-routing flow.
-
----
-
-## What V3 deliberately does NOT do
-
-- **No verifier router slot.** Three cognitive-layer slots (perception, memory, decision), not four. The verifier needs more design work before it gets its own router — coming in a later version.
-- **No content-based routing decisions.** The router emits only a tier label (`TINY` / `LARGE` / `HUGE`). It never recommends a specific provider, never picks a model, never answers questions. Worker selection from the tier is deterministic (table lookup) so routing decisions are reproducible.
-- **No router-router-of-routers.** The router pool is failed-over via a static `ROUTER_ORDER` ring. There is no meta-router deciding which router to use — that would be infinite recursion.
-- **No streaming on routed calls.** `auto_route` and `stream=true` aren't designed to work together yet (the router needs the full prompt before it can classify). For streaming, use explicit `provider=...`.
-- **No new providers vs V2.** Mistral AI and OVHcloud were evaluated and parked for V4. Worker pool stays at 7 providers; router pool is 4 of the existing providers used with different (router-grade) model defaults.
-- **No new tools / no agent loop.** Same as V2 — V3 is the substrate. The agent loop that uses `auto_route` is in Session 6's `agent6.py`, not here.
-
----
-
-## Test matrix
-
-```bash
-./.venv/bin/python tests/test_all_providers.py
+```bat
+uv run python -m agent6 "Fetch https://en.wikipedia.org/wiki/Claude_Shannon and tell me his birth date, death date, and three key contributions to information theory."
 ```
 
-Inherits V2's per-worker matrix (basic, tools, structured, cache, reasoning) plus a routing column that checks each `auto_route` value produces a `router_decision` block with a sensible tier.
-
-A real run (May 2026, free-tier keys):
+**What it exercises:** The full artifact attach path. The web search result (~6 KB) is stored as an artifact. Perception sees the artifact handle in memory hits and sets `attach_artifact_id` on the extraction goal. Decision reads the raw bytes and answers in one call.
 
 ```
-provider    basic    tools     struct    cache    reasoning   routing
----------------------------------------------------------------------
-ollama      OK       OK        OK        SKIP     n/a         n/a
-gemini      OK       OK        OK        n/a*     n/a*        OK
-nvidia      OK       OK        OK        n/a      n/a         OK
-groq        OK       OK        OK        FAIL‡    n/a         OK
-cerebras    FAIL§    FAIL§     FAIL§     FAIL     FAIL        OK§§
-openrouter  OK       OK        OK        n/a      n/a         (skipped)
-github      OK       OK        OK        n/a      n/a         OK
+─── iter 1 ───
+[memory.read]   0 hits
+[perception]    [open] Fetch the Wikipedia page for Claude Shannon.
+[perception]    [open] Extract his birth date, death date, and three key contributions to information theory from the fetched content.
+[decision]      TOOL_CALL: web_search({"query": "Wikipedia Claude Shannon"})
+[action]        → [artifact art:dca38a7ce9199feb, 6,283 bytes] preview: { "title": "Claude Shannon - Wikipedia" ...
 
-router pool:
-- cerebras (llama3.1-8b)       — intermittent (queue_exceeded), failover works
-- groq (llama-3.3-70b)          — rock solid, 220-450ms typical
-- nvidia (nemotron-nano-8b)     — wired, tested ad-hoc
-- github (phi-4-mini)           — wired, tested ad-hoc
+─── iter 2 ───
+[memory.read]   1 hits
+                tool_outcome: web_search(query=Wikipedia Claude Shannon) → art:dca38a7ce9199feb  [artifact: art:dca38a7ce9199feb]
+[perception]    [done] Fetch the Wikipedia page for Claude Shannon.
+[perception]    [open] Extract his birth date, death date, and three key contributions to information theory from the fetched content.
+                  attach=art:dca38a7ce9199feb
+[attach]        art:dca38a7ce9199feb (6,283 bytes)
+[decision]      router/503 → fallback to gemini direct
+[decision]      ANSWER: Claude Shannon was born on April 30, 1916, and passed away on February 24, 2001. His three key contributions ...
+
+─── iter 3 ───
+[memory.read]   1 hits
+[perception]    [done] Fetch the Wikipedia page for Claude Shannon.
+[perception]    [done] Extract his birth date, death date, and three key contributions to information theory from the fetched content.
+                  attach=art:dca38a7ce9199feb
+
+[done] all 2 goals satisfied
+
+FINAL: Claude Shannon was born on April 30, 1916, and passed away on February 24, 2001. His three key
+contributions to information theory include:
+
+1. **Founding the Field:** He established the mathematical foundations of information theory with his 1948
+   paper, "A Mathematical Theory of Communication," which is widely regarded as the "Magna Carta of the
+   Information Age."
+2. **Defining the "Bit":** He introduced the concept of measuring information using binary digits, or "bits,"
+   providing a quantitative way to define and measure information as the resolution of uncertainty.
+3. **The Noisy-Channel Coding Theorem:** He formulated this fundamental theorem, which proved that it is
+   possible to transmit information over a noisy channel with an arbitrarily low probability of error,
+   provided the transmission rate is below the channel's capacity.
 ```
-
-§§ Cerebras router serves the first request after a quiet period, then queue-exceeds for a few minutes; failover to Groq handles the gap.
 
 ---
 
-## Pedagogical notes — what to surface in class
+### Query B — Multi-Goal + Weather Constraint
 
-1. **The router can be turned off.** Skip `auto_route` and V3 behaves like V2. The router is opt-in, not load-bearing. This makes the routing subsystem independently testable.
-2. **The wall is enforced in code, not by convention.** Walk students through `_classify_tier()` and show them the bounded envelope being constructed. Then ask: "could you add a feature that lets the router see the tool list?" The answer is no — not without breaking the wall, which would be a visible code change.
-3. **Free-tier reality forces design choices.** Cerebras `gpt-oss-120b` 404s on the test account despite the docs. The May-27 deprecation is real and looming. These aren't bugs to fix, they're constraints to design around — and the four-router pool is the design response.
-4. **Token thresholds are honest, not aspirational.** The 1K elbow is set where free-tier small models actually start failing, not where their context windows nominally end. The 8K ceiling is set where free-tier Gemini quality actually starts dropping. Students should learn to test these elbows themselves with their own keys.
-5. **`fallback_used` is the honest measure of routing health.** A dashboard that shows high `fallback_used` count tells you the router pool is overloaded; the gateway didn't lie about its decisions, it just couldn't make them with a real LLM. This is the kind of observability you can only build when the architecture is honest about failure modes.
+```bat
+uv run python -m agent6 "Find 3 family-friendly things to do in Tokyo this weekend. Check Saturday's weather forecast there and tell me which one is most appropriate."
+```
+
+**What it exercises:** Three sequential goals — search activities, search weather, cross-reference and recommend. Memory carries the weather artifact handle from iteration 2 into Decision's context in iteration 3.
+
+```
+─── iter 1 ───
+[memory.read]   1 hits
+[perception]    [open] Search for 3 family-friendly activities in Tokyo suitable for the weekend.
+[perception]    [open] Search for the weather forecast in Tokyo for this Saturday.
+[perception]    [open] Recommend the most appropriate activity based on the weather forecast.
+[decision]      TOOL_CALL: web_search({"query": "family-friendly activities in Tokyo for the weekend"})
+[action]        → [artifact art:b401a910d4b7718a, 8,870 bytes] preview: ...
+
+─── iter 2 ───
+[memory.read]   2 hits
+[perception]    [done] Search for 3 family-friendly activities in Tokyo suitable for the weekend.
+                  attach=art:b401a910d4b7718a
+[perception]    [open] Search for the weather forecast in Tokyo for this Saturday.
+[perception]    [open] Recommend the most appropriate activity based on the weather forecast.
+[decision]      router/503 → fallback to gemini direct
+[decision]      TOOL_CALL: web_search({"query": "weather forecast Tokyo this Saturday"})
+[action]        → [artifact art:00c3ba6de460b777, 9,413 bytes] preview: ...
+
+─── iter 3 ───
+[memory.read]   3 hits
+[perception]    [done] Search for 3 family-friendly activities in Tokyo suitable for the weekend.
+[perception]    [done] Search for the weather forecast in Tokyo for this Saturday.
+[perception]    [open] Recommend the most appropriate activity based on the weather forecast.
+                  attach=art:b401a910d4b7718a
+[attach]        art:b401a910d4b7718a (8,870 bytes)
+[decision]      ANSWER: Given the weather forecast of "patchy rain" for this Saturday in Tokyo ...
+
+─── iter 4 ───
+[perception]    [done] Search for 3 family-friendly activities in Tokyo suitable for the weekend.
+[perception]    [done] Search for the weather forecast in Tokyo for this Saturday.
+[perception]    [done] Recommend the most appropriate activity based on the weather forecast.
+
+[done] all 3 goals satisfied
+
+FINAL: Given the weather forecast of "patchy rain" for this Saturday in Tokyo, I recommend planning indoor
+activities to ensure your family remains comfortable and dry. Here are three excellent indoor options:
+
+1. **Character Cafés:** Tokyo is famous for its themed dining experiences. Visiting a Pokémon or Kirby café
+   provides a fun, immersive environment for children that is completely shielded from the weather.
+2. **Interactive Workshops:** You might consider booking an authentic sushi-making class or a traditional
+   tea ceremony in Asakusa. These hands-on cultural experiences are excellent for families and are held in
+   climate-controlled indoor settings.
+3. **Arcades and Entertainment Centers:** Areas like Akihabara are home to multi-story arcades that offer
+   a variety of games and entertainment, making them a perfect "escape" from rainy conditions while still
+   providing plenty of excitement for kids and adults alike.
+```
+
+---
+
+### Query C — Durable Memory Across Two Runs
+
+**Run 1:**
+```bat
+uv run python -m agent6 "My mom's birthday is 7 August 2026. Remember that and give me a calendar reminder for two weeks before and on the day."
+```
+
+**Run 2:**
+```bat
+uv run python -m agent6 "When is mom's birthday?"
+```
+
+**What it exercises:** `memory.remember()` is called at the very start of run 1, storing the date in `state/memory.json`. Run 2 reads the same file without any tool calls — the fact surfaces immediately through the keyword search and Decision answers directly from memory.
+
+**Run 1:**
+```
+[memory.remember]  stored as fact: My mom's birthday is 7 August 2026. Remember that...
+                   keywords: ['remember', 'give', 'calendar', 'weeks', 'august']
+
+─── iter 1 ───
+[memory.read]   2 hits
+                fact: My mom's birthday is 7 August 2026. Remember that...
+[perception]    [open] Store the date of mom's birthday as 7 August 2026.
+[perception]    [open] Calculate the date two weeks before 7 August 2026.
+[perception]    [open] Create calendar reminders for 24 July 2026 and 7 August 2026.
+[decision]      TOOL_CALL: create_file({"path": "moms_birthday.txt", "content": "Mom's birthday: 7 August 2026.\nReminder 1: 24 July 2026 (two weeks before)..."})
+[action]        → {"ok": true, "path": "moms_birthday.txt", "size_bytes": 117}
+
+─── iter 2 ───
+[perception]    [done] Store the date of mom's birthday as 7 August 2026.
+[perception]    [done] Calculate the date two weeks before 7 August 2026.
+[perception]    [done] Create calendar reminders for 24 July 2026 and 7 August 2026.
+
+[done] all 3 goals satisfied
+```
+
+**Run 2:**
+```
+─── iter 1 ───
+[memory.read]   3 hits
+                fact: When is mom's birthday?
+                fact: My mom's birthday is 7 August 2026. Remember that...
+                tool_outcome: create_file(path=moms_birthday.txt, ...)
+[perception]    [open] Identify the date of mom's birthday from the provided memory.
+[perception]    [open] Confirm the creation of the calendar reminders for 24 July and 7 August.
+[decision]      ANSWER: Mom's birthday is on 7 August 2026. This date was confirmed in the provided
+                memory and has been documented in the file "moms_birthday.txt" within the system.
+                You have also scheduled reminders for two weeks prior, on 24 July, and on the day itself.
+
+─── iter 2 ───
+[perception]    [done] Identify the date of mom's birthday from the provided memory.
+[perception]    [done] Confirm the creation of the calendar reminders for 24 July and 7 August.
+
+[done] all 2 goals satisfied
+
+FINAL: Mom's birthday is on 7 August 2026. This date was confirmed in the provided memory and has been
+documented in the file "moms_birthday.txt" within the system. You have also scheduled reminders for two
+weeks prior, on 24 July, and on the day of the birthday itself.
+```
+
+---
+
+### Query D — Multi-Source Synthesis
+
+```bat
+uv run python -m agent6 "Search for 'Python asyncio best practices', read the top 3 results, and give me a short numbered list of the advice they agree on."
+```
+
+**What it exercises:** Web search produces a results artifact. Perception attaches it to the "read top 3 results" goal. Decision synthesizes a consolidated answer from the attached artifact content in a single call.
+
+```
+─── iter 1 ───
+[memory.read]   5 hits
+[perception]    [open] Search for 'Python asyncio best practices'.
+[perception]    [open] Read the content of the top 3 search results.
+[perception]    [open] Synthesize a numbered list of the common advice found across the top 3 results.
+[decision]      TOOL_CALL: web_search({"query": "Python asyncio best practices"})
+[action]        → [artifact art:d29c2990ffc93419, 9,633 bytes] preview: ...
+
+─── iter 2 ───
+[memory.read]   6 hits
+                tool_outcome: web_search(query=Python asyncio best practices) → art:d29c2990ffc93419  [artifact]
+[perception]    [done] Search for 'Python asyncio best practices'.
+[perception]    [open] Read the content of the top 3 search results.
+                  attach=art:d29c2990ffc93419
+[perception]    [open] Synthesize a numbered list of the common advice found across the top 3 results.
+[attach]        art:d29c2990ffc93419 (9,633 bytes)
+[decision]      ANSWER: Based on the search results provided, here are the key best practices ...
+
+─── iter 3 ───
+[perception]    [done] Search for 'Python asyncio best practices'.
+[perception]    [open] Read the content of the top 3 search results.
+                  attach=art:d29c2990ffc93419
+[perception]    [open] Synthesize a numbered list of the common advice found across the top 3 results.
+[attach]        art:d29c2990ffc93419 (9,633 bytes)
+[decision]      router/503 → fallback to gemini direct
+[decision]      ANSWER: The top three search results for asyncio best practices provide the following insights ...
+
+─── iter 4 ───
+[perception]    [done] Search for 'Python asyncio best practices'.
+[perception]    [done] Read the content of the top 3 search results.
+[perception]    [done] Synthesize a numbered list of the common advice found across the top 3 results.
+
+[done] all 3 goals satisfied
+
+FINAL: The top three search results for `asyncio` best practices provide the following insights:
+
+1. **Asyncio best practices - Async-SIG - Discussions on Python.org:** This community discussion highlights
+   that async functions are not inherently asynchronous and must be integrated with the `asyncio` library
+   to achieve concurrency. It emphasizes avoiding long-running loops that block the event loop and suggests
+   scheduling iterations onto the loop instead. It also discusses the importance of using `tasks` to track
+   and manage concurrent operations.
+
+2. **Python's asyncio: A Hands-On Walkthrough (Real Python):** This tutorial explains that `asyncio` is
+   best suited for I/O-bound tasks where it can outperform multithreading by avoiding thread management
+   overhead. It stresses that `asyncio.run()` should be the standard entry point for programs and warns
+   that if tasks created with `create_task()` are not awaited or gathered, they will be canceled when the
+   main coroutine finishes.
+
+3. **Asyncio Best Practices and Common Pitfalls (Shane's Personal Blog):** This resource reinforces the
+   necessity of using `asyncio.run()` to ensure proper setup and cleanup of the event loop. It advocates
+   for the use of `async with` (async context managers) for efficient resource management and highlights
+   the critical mistake of forgetting to `await` coroutines, which prevents them from executing as intended.
+```
+
+---
+
+## Memory System
+
+`state/memory.json` persists across all runs. Four item kinds:
+
+| Kind | Written by | Contains |
+|---|---|---|
+| `fact` | `memory.remember()` at run start | User-stated facts ("mom's birthday is…") |
+| `preference` | `memory.remember()` at run start | User preferences ("I prefer…") |
+| `tool_outcome` | `memory.record_outcome()` after every Action | Tool name, arguments, result preview, artifact handle |
+| `scratchpad` | (reserved for future use) | — |
+
+**Read algorithm** (`memory.read`): tokenises query + last 4 history messages into a set of lowercase word tokens. Scores each memory item by `overlap / len(query_tokens)`. Returns top-k by score, falling back to most-recent items when no overlap is found.
+
+---
+
+## Artifact Store
+
+`state/artifacts/` stores tool results larger than 4 KB.
+
+- **Handle format:** `art:<sha256[:16]>` — deterministic, content-addressed
+- **Index:** `state/artifacts/index.json` maps handle → metadata + file path
+- **Attachment:** Perception sets `attach_artifact_id` on a goal when raw bytes are needed. The agent loop loads the bytes and embeds them in the Decision prompt under `ATTACHED ARTIFACTS:`.
+- **Guard:** Action rejects any tool argument that starts with `art:` — handles are not file paths.
+
+---
+
+## LLM Gateway V3
+
+The gateway (`main.py`, port 8101) sits between the agent and 7 LLM providers:
+
+| Provider | Role |
+|---|---|
+| Gemini | Perception (pinned) + LARGE-tier Decision |
+| Groq, NVIDIA, Cerebras | LARGE-tier Decision workers |
+| GitHub Models, OpenRouter | TINY-tier Decision workers |
+| Ollama | Local fallback |
+
+**Router pool** (Cerebras, Groq, NVIDIA, GitHub with small models) classifies each Decision call as TINY or LARGE based on token count + content sample. When the prompt is too large for the router (HUGE, >8 000 tokens) or all providers are busy, Decision falls back to Gemini directly.
+
+Dashboard: http://localhost:8101
+
+---
+
+## Prompt Evaluation Results
+
+The system prompts for Perception and Decision were evaluated by an independent Prompt Evaluation Assistant against nine criteria for structured, step-by-step reasoning quality.
+
+### Perception Prompt
+
+| Criterion | Result |
+|---|---|
+| Explicit Reasoning Instructions | ✅ Yes |
+| Structured Output Format | ✅ Yes |
+| Separation of Reasoning and Tools | ✅ Yes |
+| Conversation Loop Support | ✅ Yes |
+| Instructional Framing | ✅ Yes |
+| Internal Self-Checks | ✅ Yes |
+| Reasoning Type Awareness | ❌ No |
+| Error Handling / Fallbacks | ❌ No |
+
+**Overall:** Excellent structure and strong operational constraints. The prompt clearly defines role behavior, completion criteria, output formatting, and multi-turn consistency. It strongly reduces hallucination through evidence-based completion checks and strict JSON output rules. It could be improved further by adding explicit reasoning-type labels (e.g., search vs extraction vs synthesis) and fallback behavior for ambiguous or missing run history.
+
+---
+
+### Decision Prompt
+
+| Criterion | Result |
+|---|---|
+| Explicit Reasoning Instructions | ❌ No |
+| Structured Output Format | ✅ Yes |
+| Separation of Reasoning and Tools | ✅ Yes |
+| Conversation Loop Support | ✅ Yes |
+| Instructional Framing | ✅ Yes |
+| Internal Self-Checks | ❌ No |
+| Reasoning Type Awareness | ❌ No |
+| Error Handling / Fallbacks | ✅ Yes |
+
+**Overall:** Strong operational prompt with clear agent constraints, strict tool usage rules, and good multi-turn orchestration support. The prompt is highly robust against hallucinated actions and invalid tool calls through explicit restrictions on artifacts, arguments, and output behavior. However, it does not explicitly encourage step-by-step reasoning, self-verification, or reasoning-type labeling. Fallback handling is partially supported through guidance like calling `list_dir('.')` when uncertain about sandbox paths.

@@ -1,87 +1,217 @@
 [
   {
-    "id": "3b58e3c3-c191-4c96-a797-0d51d2551f8d",
+    "id": "9fe1eded-4fa2-4040-bc52-df13d83d744d",
     "kind": "tool_outcome",
     "keywords": [
-      "web",
-      "search",
-      "claude",
       "shannon",
+      "search",
+      "web",
+      "claude",
       "wikipedia"
     ],
-    "descriptor": "web_search(query=Claude Shannon Wikipedia) \u2192 art:498e6f0fd4aa2e80",
+    "descriptor": "web_search(query=Wikipedia Claude Shannon) \u2192 art:dca38a7ce9199feb",
     "value": {
       "tool": "web_search",
       "arguments": {
-        "query": "Claude Shannon Wikipedia"
+        "query": "Wikipedia Claude Shannon"
       },
-      "result_preview": "[artifact art:498e6f0fd4aa2e80, 8,378 bytes] preview: {   \"title\": \"Claude E. Shannon | Wikipedia audio article\",   \"url\": \"https://www.youtube.com/watch?v=CPutV3d6IsY\",   \"snippet\": \"in New York, titled Saving Face: Information Tricks for Love and Life,...",
-      "artifact_id": "art:498e6f0fd4aa2e80"
+      "result_preview": "[artifact art:dca38a7ce9199feb, 6,283 bytes] preview: {   \"title\": \"Claude Shannon - Wikipedia\",   \"url\": \"https://en.wikipedia.org/wiki/Claude_Shannon\",   \"snippet\": \"with a PhD in mathematics;( his thesis focusing on genetics contained important result...",
+      "artifact_id": "art:dca38a7ce9199feb"
     },
-    "artifact_id": "art:498e6f0fd4aa2e80",
+    "artifact_id": "art:dca38a7ce9199feb",
     "source": "action/web_search",
-    "run_id": "f367d502",
-    "goal_id": "g1_f367d502",
+    "run_id": "5f40ef26",
+    "goal_id": "g1_5f40ef26",
     "confidence": 1.0,
-    "created_at": "2026-05-17T12:19:51.215737"
+    "created_at": "2026-05-17T23:32:05.448817"
   },
   {
-    "id": "4f12046f-c44d-4150-abea-97304b53255c",
+    "id": "d73f1181-0833-45f6-a157-2bf5dd1a37fe",
     "kind": "tool_outcome",
     "keywords": [
-      "tokyo",
-      "friendly",
-      "the",
-      "family",
-      "web",
       "search",
-      "weekend",
+      "web",
       "in",
+      "activities",
+      "friendly",
+      "tokyo",
       "for",
-      "activities"
+      "weekend",
+      "the",
+      "family"
     ],
-    "descriptor": "web_search(query=family-friendly activities in Tokyo for the weeken) \u2192 art:6b7c8a17bc6c0ed0",
+    "descriptor": "web_search(query=family-friendly activities in Tokyo for the weeken) \u2192 art:b401a910d4b7718a",
     "value": {
       "tool": "web_search",
       "arguments": {
         "query": "family-friendly activities in Tokyo for the weekend"
       },
-      "result_preview": "[artifact art:6b7c8a17bc6c0ed0, 10,542 bytes] preview: {   \"title\": \"Family Activities | Tokyo Cheapo\",   \"url\": \"https://tokyocheapo.com/entertainment/family/\",   \"snippet\": \"### Niko Niko Park \u2013 Cheap Fun with the Kids\\n\\nTokyo parks get crowded.  On we...",
-      "artifact_id": "art:6b7c8a17bc6c0ed0"
+      "result_preview": "[artifact art:b401a910d4b7718a, 8,870 bytes] preview: {   \"title\": \"The best Tokyo Family-friendly activities 2026 - Free cancellation | GetYourGuide\",   \"url\": \"https://www.getyourguide.com/tokyo-l193/family-friendly-activities-tc1094/\",   \"snippet\": \"I...",
+      "artifact_id": "art:b401a910d4b7718a"
     },
-    "artifact_id": "art:6b7c8a17bc6c0ed0",
+    "artifact_id": "art:b401a910d4b7718a",
     "source": "action/web_search",
-    "run_id": "0bd651e6",
-    "goal_id": "g1_0bd651e6",
+    "run_id": "24a894d0",
+    "goal_id": "g1_24a894d0",
     "confidence": 1.0,
-    "created_at": "2026-05-17T12:24:56.949349"
+    "created_at": "2026-05-17T23:33:14.708792"
   },
   {
-    "id": "9ab836e3-ac86-4735-82dd-27376ad569e3",
+    "id": "cd38c458-9e3d-4fab-aa2f-b958c2892e97",
     "kind": "tool_outcome",
     "keywords": [
-      "tokyo",
-      "weather",
-      "saturday",
       "this",
-      "forecast",
+      "tokyo",
+      "search",
+      "weather",
       "web",
-      "search"
+      "forecast",
+      "saturday"
     ],
-    "descriptor": "web_search(query=weather forecast Tokyo this Saturday) \u2192 art:8939eb5a0d254bfa",
+    "descriptor": "web_search(query=weather forecast Tokyo this Saturday) \u2192 art:00c3ba6de460b777",
     "value": {
       "tool": "web_search",
       "arguments": {
         "query": "weather forecast Tokyo this Saturday"
       },
-      "result_preview": "[artifact art:8939eb5a0d254bfa, 9,613 bytes] preview: {   \"title\": \"Tokyo weather in May 2026 - Weather25.com\",   \"url\": \"https://www.weather25.com/asia/japan/tokyo?page=month&month=May\",   \"snippet\": \"| 24 Light rain 21\u00b0 /20\u00b0 | 25 Light drizzle 22\u00b0 /19\u00b0...",
-      "artifact_id": "art:8939eb5a0d254bfa"
+      "result_preview": "[artifact art:00c3ba6de460b777, 9,413 bytes] preview: {   \"title\": \"Weather in Tokyo in May 2026 - Detailed Forecast\",   \"url\": \"https://www.easeweather.com/asia/japan/tokyo/may\",   \"snippet\": \"| 18 Image 29: Partly cloudy 26\u00b0 | 19 Image 30: Patchy rain ...",
+      "artifact_id": "art:00c3ba6de460b777"
     },
-    "artifact_id": "art:8939eb5a0d254bfa",
+    "artifact_id": "art:00c3ba6de460b777",
     "source": "action/web_search",
-    "run_id": "0bd651e6",
-    "goal_id": "g2_0bd651e6",
+    "run_id": "24a894d0",
+    "goal_id": "g2_24a894d0",
     "confidence": 1.0,
-    "created_at": "2026-05-17T12:25:33.525895"
+    "created_at": "2026-05-17T23:33:40.176933"
+  },
+  {
+    "id": "1a667580-4c0c-4344-b764-ab3a3977352e",
+    "kind": "fact",
+    "keywords": [
+      "remember",
+      "give",
+      "calendar",
+      "weeks",
+      "a",
+      "on",
+      "for",
+      "august",
+      "7",
+      "before",
+      "the",
+      "reminder",
+      "birthday",
+      "day",
+      "my",
+      "and",
+      "is",
+      "me",
+      "2026",
+      "s",
+      "that",
+      "mom",
+      "two"
+    ],
+    "descriptor": "My mom's birthday is 7 August 2026. Remember that and give me a calendar reminder for two weeks before and on the day.",
+    "value": {
+      "text": "My mom's birthday is 7 August 2026. Remember that and give me a calendar reminder for two weeks before and on the day."
+    },
+    "artifact_id": null,
+    "source": "user",
+    "run_id": "28945415",
+    "goal_id": null,
+    "confidence": 0.9,
+    "created_at": "2026-05-17T23:34:51.558915"
+  },
+  {
+    "id": "f06bd28e-5a88-4347-bd65-f51ca8a4006a",
+    "kind": "tool_outcome",
+    "keywords": [
+      "create",
+      "2",
+      "txt",
+      "moms",
+      "2026",
+      "weeks",
+      "file",
+      "s",
+      "24",
+      "july",
+      "on",
+      "day",
+      "august",
+      "7",
+      "mom",
+      "before",
+      "the",
+      "reminder",
+      "birthday",
+      "two",
+      "1"
+    ],
+    "descriptor": "create_file(path=moms_birthday.txt, content=Mom's birthday: 7 August 2026.\nReminder 1: 24 July) \u2192 {   \"ok\": true,   \"path\": \"moms_birthday.txt\",   \"size_bytes\": 117 }",
+    "value": {
+      "tool": "create_file",
+      "arguments": {
+        "path": "moms_birthday.txt",
+        "content": "Mom's birthday: 7 August 2026.\nReminder 1: 24 July 2026 (two weeks before).\nReminder 2: 7 August 2026 (on the day)."
+      },
+      "result_preview": "{\n  \"ok\": true,\n  \"path\": \"moms_birthday.txt\",\n  \"size_bytes\": 117\n}",
+      "artifact_id": null
+    },
+    "artifact_id": null,
+    "source": "action/create_file",
+    "run_id": "28945415",
+    "goal_id": "g1_28945415",
+    "confidence": 1.0,
+    "created_at": "2026-05-17T23:35:19.202420"
+  },
+  {
+    "id": "a1ce33ad-3a0e-43c5-9d66-05521fe158e3",
+    "kind": "fact",
+    "keywords": [
+      "is",
+      "when",
+      "mom",
+      "s",
+      "birthday"
+    ],
+    "descriptor": "When is mom's birthday?",
+    "value": {
+      "text": "When is mom's birthday?"
+    },
+    "artifact_id": null,
+    "source": "user",
+    "run_id": "4e851ac2",
+    "goal_id": null,
+    "confidence": 0.9,
+    "created_at": "2026-05-17T23:35:43.422192"
+  },
+  {
+    "id": "94319924-408c-4b14-ac10-ea067bbd0cad",
+    "kind": "tool_outcome",
+    "keywords": [
+      "asyncio",
+      "practices",
+      "search",
+      "python",
+      "web",
+      "best"
+    ],
+    "descriptor": "web_search(query=Python asyncio best practices) \u2192 art:d29c2990ffc93419",
+    "value": {
+      "tool": "web_search",
+      "arguments": {
+        "query": "Python asyncio best practices"
+      },
+      "result_preview": "[artifact art:d29c2990ffc93419, 9,633 bytes] preview: {   \"title\": \"Asyncio best practices - Async-SIG - Discussions on Python.org\",   \"url\": \"https://discuss.python.org/t/asyncio-best-practices/12576\",   \"snippet\": \"# Asyncio best practices\\n\\nSo I thou...",
+      "artifact_id": "art:d29c2990ffc93419"
+    },
+    "artifact_id": "art:d29c2990ffc93419",
+    "source": "action/web_search",
+    "run_id": "5f455630",
+    "goal_id": "g1_5f455630",
+    "confidence": 1.0,
+    "created_at": "2026-05-17T23:37:14.367150"
   }
 ]

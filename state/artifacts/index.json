@@ -1,26 +1,34 @@
 {
-  "art:498e6f0fd4aa2e80": {
-    "id": "art:498e6f0fd4aa2e80",
+  "art:dca38a7ce9199feb": {
+    "id": "art:dca38a7ce9199feb",
     "content_type": "text/plain",
-    "size_bytes": 8378,
-    "source": "web_search(Claude Shannon Wikipedia)",
-    "descriptor": "web_search result, 8,378 bytes",
-    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\498e6f0fd4aa2e80.bin"
+    "size_bytes": 6283,
+    "source": "web_search(Wikipedia Claude Shannon)",
+    "descriptor": "web_search result, 6,283 bytes",
+    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\dca38a7ce9199feb.bin"
   },
-  "art:6b7c8a17bc6c0ed0": {
-    "id": "art:6b7c8a17bc6c0ed0",
+  "art:b401a910d4b7718a": {
+    "id": "art:b401a910d4b7718a",
     "content_type": "text/plain",
-    "size_bytes": 10542,
+    "size_bytes": 8870,
     "source": "web_search(family-friendly activities in Tokyo for the weekend)",
-    "descriptor": "web_search result, 10,542 bytes",
-    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\6b7c8a17bc6c0ed0.bin"
+    "descriptor": "web_search result, 8,870 bytes",
+    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\b401a910d4b7718a.bin"
   },
-  "art:8939eb5a0d254bfa": {
-    "id": "art:8939eb5a0d254bfa",
+  "art:00c3ba6de460b777": {
+    "id": "art:00c3ba6de460b777",
     "content_type": "text/plain",
-    "size_bytes": 9613,
+    "size_bytes": 9413,
     "source": "web_search(weather forecast Tokyo this Saturday)",
-    "descriptor": "web_search result, 9,613 bytes",
-    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\8939eb5a0d254bfa.bin"
+    "descriptor": "web_search result, 9,413 bytes",
+    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\00c3ba6de460b777.bin"
+  },
+  "art:d29c2990ffc93419": {
+    "id": "art:d29c2990ffc93419",
+    "content_type": "text/plain",
+    "size_bytes": 9633,
+    "source": "web_search(Python asyncio best practices)",
+    "descriptor": "web_search result, 9,633 bytes",
+    "path": "E:\\Saikiran\\TSAI_EAG_V3\\Week06\\Assignment\\state\\artifacts\\d29c2990ffc93419.bin"
   }
 }
