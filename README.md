@@ -1,6 +1,6 @@
 # Agent6 — Memory · Perception · Decision · Action
 
-A cognitive agent built on top of **LLM Gateway V3**. The agent decomposes any user query into goals, executes them step by step using real web tools, stores results in a persistent memory file, and produces a final answer — all without keeping any state inside the LLM.
+A cognitive agent built on top of **LLM Gateway V3**. The agent decomposes any user query into goals, executes them step by step using real web tools, stores results in a persistent memory file,  and produces a final answer — all without keeping any state inside the LLM.
 
 ---
 
